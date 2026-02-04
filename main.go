@@ -1,53 +1,46 @@
 package main
 
 import (
-	"bytes"
+	"net/http"
 	"os/exec"
-	"runtime"
+	"time"
 
-	"github.com/gofiber/fiber/v3"
-	"github.com/gofiber/fiber/v3/middleware/cors"
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/cors"
 )
 
+// 截图函数
+func snapshot(w http.ResponseWriter, r *http.Request) {
+	now := time.Now()
+	output, err := exec.Command("screencap", "-p").Output()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	// 打印耗时
+	println("截图耗时：", time.Since(now).Milliseconds(), "ms")
+
+	w.Header().Set("Content-Type", "image/png")
+	w.Write(output)
+}
+
 func main() {
-	app := fiber.New()
+	r := chi.NewRouter()
+	r.Use(middleware.Logger)
 
-	app.Use(cors.New())
+	r.Use(cors.Handler(cors.Options{
+		// AllowedOrigins:   []string{"https://foo.com"}, // Use this to allow specific origin hosts
+		AllowedOrigins: []string{"https://*", "http://*"},
+		// AllowOriginFunc:  func(r *http.Request, origin string) bool { return true },
+		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
+		ExposedHeaders:   []string{"Link"},
+		AllowCredentials: false,
+		MaxAge:           300, // Maximum value not ignored by any of major browsers
+	}))
 
-	app.Get("/", func(c fiber.Ctx) error {
-		return c.SendString("Hello, World!")
-	})
-
-	if runtime.GOOS == "windows" {
-		app.Get("/snapshot", func(c fiber.Ctx) error {
-			// 通过shell 调用安卓的adb命令，获取屏幕截图
-			cmd := exec.Command("adb", "shell", "screencap", "-p")
-			output, err := cmd.Output()
-			if err != nil {
-				return err
-			}
-
-			c.Set("Content-Type", "image/png")
-			// 去除截图中的\r\n 换行符
-			return c.Send(bytes.ReplaceAll(output, []byte{'\r', '\n'}, []byte{'\n'}))
-		})
-	} else { // android
-		app.Get("/snapshot", func(c fiber.Ctx) error {
-			// 通过shell 调用安卓命令，获取屏幕截图
-			cmd := exec.Command("screencap", "-p")
-			output, err := cmd.Output()
-			if err != nil {
-				return err
-			}
-
-			c.Set("Content-Type", "image/png")
-			return c.Send(output)
-		})
-	}
-
-	if runtime.GOOS == "Windows" {
-		app.Listen("127.0.0.1:12138")
-	} else {
-		app.Listen(":12138")
-	}
+	r.Get("/snapshot", snapshot)
+	r.Post("/snapshot", snapshot)
+	http.ListenAndServe(":12138", r)
 }
