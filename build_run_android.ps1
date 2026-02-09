@@ -3,7 +3,9 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 # 清空构建目录
-Remove-Item -Path .\build -Recurse
+if (Test-Path -Path .\build) {
+    Remove-Item -Path .\build -Recurse
+}
 
 # Go 构建安卓可执行文件
 $env:GOOS = "linux"
