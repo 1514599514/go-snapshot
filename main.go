@@ -1,31 +1,42 @@
 package main
 
 import (
+	"fmt"
+	"image/png"
 	"net/http"
 	"os/exec"
 	"time"
 
+	"github.com/1514599514/go-minicap"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 )
 
 // 截图函数
-func snapshot(w http.ResponseWriter, r *http.Request) {
+func screencap(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
+
 	output, err := exec.Command("screencap", "-p").Output()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
 	// 打印耗时
-	println("截图耗时：", time.Since(now).Milliseconds(), "ms")
+	fmt.Printf("snapshotScreencap cost: %v\n", time.Since(now))
 
 	w.Header().Set("Content-Type", "image/png")
 	w.Write(output)
 }
 
 func main() {
+	mc := minicap.Create(0)
+	if mc == nil {
+		panic("minicap create failed")
+	}
+	defer minicap.Free(mc)
+
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 
@@ -39,6 +50,26 @@ func main() {
 		AllowCredentials: false,
 		MaxAge:           300, // Maximum value not ignored by any of major browsers
 	}))
+
+	snapshot := func(w http.ResponseWriter, r *http.Request) {
+		now := time.Now()
+
+		if n := minicap.WaiterWaitForFrame(mc, 100); n <= 0 {
+			screencap(w, r)
+			return
+		}
+		nrgba := minicap.ConsumePendingFrame(mc)
+		if nrgba == nil {
+			screencap(w, r)
+			return
+		}
+
+		// 打印耗时
+		fmt.Printf("minicap cost: %v\n", time.Since(now))
+
+		w.Header().Set("Content-Type", "image/png")
+		png.Encode(w, nrgba)
+	}
 
 	r.Get("/snapshot", snapshot)
 	r.Post("/snapshot", snapshot)
